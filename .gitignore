@@ -1,0 +1,20 @@
+.git
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[codz]
+*$py.class
+
+# Environments
+.venv
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Streamlit
+.streamlit/secrets.tomlvenv
+
+# Project Files
+known_faces/*
