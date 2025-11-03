@@ -1,6 +1,6 @@
 # CV System
 
-A lightweight, on-device face detection + re-identification pipeline built around the **Luxonis OAK‑D**. This version mirrors your original workflow and libraries (DepthAI 2.11.x), stores detections to SQLite, and saves both full frames and cropped faces to disk.
+A lightweight, on-device face detection + re-identification pipeline built around the **Luxonis OAK‑D**.
 
 ---
 
@@ -11,7 +11,7 @@ A lightweight, on-device face detection + re-identification pipeline built aroun
 - **Database:** per‑day SQLite DB with entries for face embeddings, image paths, and timing info.
 - **No demographics:** the Race/Age/Gender path is disabled by default in this build.
 
-Key runtime logic lives in `cv_start.py` (camera + pipeline + main loop) and `cv_db.sql(...)` (DB insert/update). fileciteturn3file2 fileciteturn3file1
+Key runtime logic lives in `cv_start.py` (camera + pipeline + main loop) and `cv_db.sql(...)` (DB insert/update).
 
 ---
 
