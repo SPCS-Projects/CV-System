@@ -112,7 +112,7 @@ def bbox_pred(boxes, box_deltas):
     if boxes.shape[0] == 0:
         return np.zeros((0, box_deltas.shape[1]))
 
-    boxes = boxes.astype(np.float32, copy=False)
+    boxes = boxes.astype(np.float, copy=False)
     widths = boxes[:, 2] - boxes[:, 0] + 1.0
     heights = boxes[:, 3] - boxes[:, 1] + 1.0
     ctr_x = boxes[:, 0] + 0.5 * (widths - 1.0)
@@ -147,7 +147,7 @@ def bbox_pred(boxes, box_deltas):
 def landmark_pred(boxes, landmark_deltas):
     if boxes.shape[0] == 0:
       return np.zeros((0, landmark_deltas.shape[1]))
-    boxes = boxes.astype(np.float32, copy=False)
+    boxes = boxes.astype(np.float, copy=False)
     widths = boxes[:, 2] - boxes[:, 0] + 1.0
     heights = boxes[:, 3] - boxes[:, 1] + 1.0
     ctr_x = boxes[:, 0] + 0.5 * (widths - 1.0)
@@ -191,7 +191,7 @@ def cpu_nms(dets, threshold):
     order = scores.argsort()[::-1]
 
     ndets = dets.shape[0]
-    suppressed = np.zeros((ndets), dtype=np.int32)
+    suppressed = np.zeros((ndets), dtype=np.int)
 
     keep = []
     for _i in range(ndets):
@@ -201,7 +201,7 @@ def cpu_nms(dets, threshold):
         keep.append(i)
         ix1 = x1[i]; iy1 = y1[i]; ix2 = x2[i]; iy2 = y2[i]
         iarea = areas[i]
-        for __j in range(_i + 1, ndets):
+        for _j in range(_i + 1, ndets):
             j = order[_j]
             if suppressed[j] == 1:
                 continue

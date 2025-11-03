@@ -1,21 +1,10 @@
-.git
-
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
-
-# Environments
-.venv
-venv/
-
-# IDE
-.idea/
-.vscode/
-
-# Project Files
-faces/*
-images/*
-database/*
-
-main.bak.py
+.pyc
+*.pyc
+__pycache__
+/venv
+/.idea
+log.txt
+/faces
+/images
+/database
+/db_backup

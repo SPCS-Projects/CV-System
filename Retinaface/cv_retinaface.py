@@ -1,10 +1,14 @@
 import numpy as np
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+# import cv_analytics.Retinaface.cv_imgprocess as process
 import Retinaface.cv_imgprocess as process
+# from cv_analytics.Retinaface.cv_RetinaFaceWrapper import detect_face
+from Retinaface.cv_RetinaFaceWrapper import detect_face
 import cv2
-import tensorflow as tf
+from tensorflow.keras.preprocessing import image
 
+import tensorflow as tf
 
 
 def detect_faces(data, img, im_info, im_scale, threshold=0.9):
@@ -128,34 +132,19 @@ def detect_faces(data, img, im_info, im_scale, threshold=0.9):
 
 
 def detect(data, img, im_info, im_scale, align):
-    """
-    Direct wrapper around detect_faces() that returns a list of (detected_face, img_region).
-    Replaces dependency on cv_RetinaFaceWrapper.detect_face.
-    """
-    resp = []
-    obj = detect_faces(data, img, im_info, im_scale)
-    if type(obj) == dict and len(obj) > 0:
-        for key in obj:
-            identity = obj[key]
-            facial_area = identity.get("facial_area", None)
-            if facial_area is None or len(facial_area) < 4:
-                continue
-            x1, y1, x2, y2 = map(int, facial_area[:4])
-            w = x2 - x1
-            h = y2 - y1
-            img_region = [x1, y1, w, h]
-            detected_face = img[y1:y2, x1:x2]
-
-            if align and "landmarks" in identity:
-                lm = identity["landmarks"]
-                right_eye = lm.get("right_eye")
-                left_eye = lm.get("left_eye")
-                nose = lm.get("nose")
-                if right_eye is not None and left_eye is not None and nose is not None:
-                    detected_face = process.alignment_procedure(detected_face, right_eye, left_eye, nose)
-
-            resp.append((detected_face, img_region))
-    return resp
+    obj = detect_face(data, img, im_info, im_scale, align)
+    if len(obj) > 0:
+        face = []
+        region = []
+        for i in range (len(obj)):
+            face.append(obj[i][0])
+            region.append(obj[i][1])
+        return face, region
+    else: #len(obj) == 0
+        face = None
+        # print("I don't do this this bad")
+        region = [0, 0, img.shape[0], img.shape[1]]
+        return face, region
 
 
 def test(testing_output, image, im_info, im_scale, align):
@@ -194,7 +183,7 @@ def resize(img, target_size):
 
         # normalizing the image pixels
 
-        img_pixels = np.asarray(img[i], dtype=np.float32)
+        img_pixels = image.img_to_array(img[i])  # what this line doing? must?
         img_pixels = np.expand_dims(img_pixels, axis=0)
         img_pixels /= 255  # normalize input in [0, 1]
         img_pixel.append(img_pixels)
@@ -209,4 +198,33 @@ def get_data(testing_output, img, im_info, im_scale, align, target_size=(160, 16
         return None
     age_gender = resize(img, (224, 224))
     face_det = resize(img, target_size)
+    # for i in range(len(img)):
+    #     factor_0 = target_size[0] / img[i].shape[0]
+    #     factor_1 = target_size[1] / img[i].shape[1]
+    #     factor = min(factor_0, factor_1)
+    #
+    #     dsize = (int(img[i].shape[1] * factor), int(img[i].shape[0] * factor))
+    #     img[i] = cv2.resize(img[i], dsize)
+    #
+    #     # Then pad the other side to the target size by adding black pixels
+    #     diff_0 = target_size[0] - img[i].shape[0]
+    #     diff_1 = target_size[1] - img[i].shape[1]
+    #
+    #     img[i] = np.pad(img[i], ((diff_0 // 2, diff_0 - diff_0 // 2), (diff_1 // 2, diff_1 - diff_1 // 2), (0, 0)),
+    #                     'constant')
+    #
+    #     # double check: if target image is not still the same size with target.
+    #     if img[i].shape[0:2] != target_size:
+    #         img[i] = cv2.resize(img[i], target_size)
+    #
+    #     # ---------------------------------------------------
+    #
+    #     # normalizing the image pixels
+    #
+    #     img_pixels = image.img_to_array(img[i])  # what this line doing? must?
+    #     img_pixels = np.expand_dims(img_pixels, axis=0)
+    #     img_pixels /= 255  # normalize input in [0, 1]
+    #     img_pixel.append(img_pixels)
+    #     # ---------------------------------------------------
+
     return face_det, age_gender
