@@ -1,129 +1,125 @@
-# Visual Detection Project
+# CV System  
+**Real-Time Computer Vision System**
 
-This project aims to develop a real-time visual detection system capable of identifying individuals, recognizing faces, determining emotional expressions, and tracking behavior from video input. The system is designed to run efficiently on a Raspberry Pi with a connected camera.
+---
 
-## Features
+## Overview
+CV System is a lightweight, edge-optimized vision project built for the **Luxonis OAK-D** camera.  
+It performs **real-time face detection** and **face re-identification** directly on the device — keeping inference off the host for low-latency, efficient performance.
 
--   **Person Detection:** Identify and track individuals in the video feed.
--   **Face Recognition:** Recognize known individuals by name or label as 'unknown'.
--   **Emotion Detection:** Determine facial expressions (e.g., sad, angry, happy, neutral).
--   **Behavior Tracking:** Monitor and analyze the behavior of detected individuals.
--   **Real-time Preview:** Display a live video feed with bounding boxes around detected faces.
+This version focuses only on **detection** and **re-identification**.  
+Demographic classification and testing/logging modules from earlier builds were intentionally removed for clarity and reliability.
 
-## Technologies Used
+---
 
--   **OpenCV:** For video processing and basic computer vision tasks.
--   **MediaPipe:** For efficient face detection and landmarking.
--   **DeepFace:** For robust face recognition and emotion analysis.
--   **ONNXRuntime:** (Optional) For optimizing model inference on Raspberry Pi.
--   **Streamlit:** For creating an interactive web-based user interface.
--   **Python:** The primary programming language.
+## Objectives
+| # | Goal | Description |
+|---|------|-------------|
+| 1 | **Real-Time Detection** | Identify when a face enters the frame with minimal latency. |
+| 2 | **Re-Identification** | Match detected faces against previous embeddings to determine if they’ve been seen before. |
+| 3 | **Edge Execution** | Offload model inference to the OAK-D’s Myriad X VPU. |
+| 4 | **Simplicity & Stability** | Keep dependencies light and code easy to maintain. |
 
-## Hardware Requirements
+---
 
--   Raspberry Pi (e.g., Raspberry Pi 4 Model B or newer for better performance)
--   Compatible USB Camera or Raspberry Pi Camera Module
+## Technologies
 
-## Raspberry Pi Optimization Notes
+### Hardware
+- **Luxonis OAK-D** — powered by the *Movidius Myriad X VPU*  
+  Runs both the detection and embedding networks directly on the device.
 
-For optimal performance on a Raspberry Pi, consider the following:
+### Software Stack
+| Component | Purpose |
+|------------|----------|
+| **Python 3** | Core runtime |
+| **OpenCV** | Video capture and visualization |
+| **DepthAI** | Communication and model inference on OAK-D |
+| **SQLite** | Local database for persistent face records |
+| **NumPy** | Embedding operations and similarity matching |
 
--   **Model Selection:** DeepFace offers various models for face recognition and emotion analysis. Lighter models (e.g., `Facenet512` or `OpenFace` for recognition, and simpler emotion models) might perform better on resource-constrained devices like the Raspberry Pi. The current implementation uses `VGG-Face` for recognition and default emotion models, which can be computationally intensive.
--   **ONNXRuntime:** While `ONNXRuntime` is included in `requirements.txt`, its direct integration with DeepFace for model inference requires converting DeepFace's internal models to ONNX format, which is a more advanced optimization step not directly implemented in this initial version. However, `ONNXRuntime` can be used for other custom ONNX models if you choose to replace parts of DeepFace or MediaPipe with ONNX-optimized alternatives.
--   **Resolution and Frame Rate:** Reducing the camera resolution and frame rate can significantly improve performance.
--   **Headless Operation:** Running the Streamlit application in headless mode (without a graphical display) can save resources.
--   **Virtual Environment:** Always use a virtual environment to manage dependencies and avoid conflicts.
+---
 
-## Installation
+## Models Used
+| Model | Function | Runs On | File |
+|--------|-----------|---------|------|
+| **RetinaFace** | Face detection | OAK-D (VPU) | `blobs/Retinaface-720x1280.blob` |
+| **FaceNet** | Face embeddings (512-D) | OAK-D (VPU) | `blobs/Facenet.blob` |
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/your-username/visual-detection-project.git
-    cd visual-detection-project
-    ```
+Both models are compiled as `.blob` files for the OAK-D device.
 
-2.  **Create a virtual environment (recommended):**
-    ```bash
-    python3 -m venv venv
-    source venv/bin/activate
-    ```
+---
 
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-## Usage
-
-To run the Streamlit application, navigate to the project directory in your terminal and execute:
-
-```bash
-streamlit run app.py
+## Folder Structure
 ```
-
-This will open the application in your web browser. If running on a Raspberry Pi without a graphical interface, you might need to access it from another device on the same network using the IP address and port displayed in the terminal.
-
-### Adding Known Faces
-
-To enable face recognition, you need to populate the `known_faces` directory:
-
-1.  Create subdirectories within `known_faces` for each person you want to recognize. The subdirectory name will be the person's name (e.g., `known_faces/John_Doe`).
-2.  Place one or more clear images of the person's face (JPG or PNG format) inside their respective subdirectory. The more images from different angles and lighting conditions, the better the recognition accuracy.
-
-Example:
-
-```
-visual_detection_project/
-├── app.py
-├── core_logic.py
+CV_System/
+├── main.py
+├── db_simple.py
 ├── requirements.txt
-├── README.md
-└── known_faces/
-    ├── Alice/
-    │   └── alice_1.jpg
-    │   └── alice_2.png
-    └── Bob/
-        └── bob_face.jpg
+├── blobs/
+│   ├── Retinaface-720x1280.blob
+│   └── Facenet.blob
+├── Retinaface/
+│   ├── cv_retinaface.py
+│   └── cv_imgprocess.py
+├── faces/       # auto-created
+├── images/      # auto-created
+└── database/    # auto-created
 ```
 
-## Project Structure
+---
 
--   `app.py`: Main Streamlit application script.
--   `core_logic.py`: Contains the core computer vision and AI logic.
--   `requirements.txt`: Lists all Python dependencies.
--   `README.md`: Project documentation.
--   `known_faces/`: Directory for storing images of known individuals for face recognition.
+## Setup & Usage
+```bash
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+python main.py
+```
+Press **Q** to quit the live window.
 
-## AI Models and Their Management
+---
 
-This project leverages pre-trained models from MediaPipe and DeepFace. These libraries handle the download and management of their respective models automatically upon first use.
+## Database Schema
+The system writes detections to an SQLite database (`database/YYYY-MM-DD.db`).
 
-### MediaPipe
+| Column | Description |
+|--------|-------------|
+| **ID** | Autoincrement primary key |
+| **uID** | Unique identifier per person |
+| **EMBEDDINGS** | 512-float32 FaceNet vector |
+| **IMG** | Cropped face image path |
+| **FULL_IMG** | Full frame path |
+| **FIRST_SEEN / LAST_SEEN** | UTC timestamps |
+| **TIME_RANGES** | JSON list of [start, end] appearances |
+| **TOTAL_TIME** | Total time visible in seconds |
 
--   **Model:** MediaPipe Face Detection (specifically `model_selection=0` which is a short-range model optimized for faces that are relatively close to the camera).
--   **Location:** MediaPipe models are typically downloaded and cached by the library itself, often in a user's application data directory (e.g., `~/.cache/mediapipe` on Linux-like systems). You generally do not need to manually download or place these models.
--   **Direct Link:** Not applicable, as MediaPipe manages its own model downloads.
+---
 
-### DeepFace
+## Performance
+- Full inference (RetinaFace + FaceNet) runs on the **OAK-D**.  
+- Host handles:
+  - Frame display (`cv2.imshow`)
+  - Database writes
+  - Label drawing  
+- Typical latency: **~30–40 ms per frame** at 1080p.
 
-DeepFace is a wrapper that uses several state-of-the-art models for face recognition and emotion analysis. When you first run DeepFace functions (like `DeepFace.verify` or `DeepFace.analyze`), it will automatically download the necessary models if they are not already present.
+---
 
--   **Face Recognition Model (used in `recognize_face`):** `VGG-Face`
-    -   **Download Trigger:** The first time `DeepFace.verify(..., model_name="VGG-Face", ...)` is called.
-    -   **Location:** DeepFace models are typically downloaded to `~/.deepface/weights`.
-    -   **Direct Link:** DeepFace downloads these models from its GitHub releases or other specified URLs. You can find more details on the DeepFace GitHub repository: [https://github.com/serengil/deepface](https://github.com/serengil/deepface)
+## Requirements
+```
+opencv-python
+numpy
+depthai
+```
 
--   **Emotion Analysis Model (used in `detect_emotion`):** DeepFace uses an ensemble of models for emotion analysis. The primary model for emotion is usually based on a Convolutional Neural Network (CNN) trained on datasets like FER-2013.
-    -   **Download Trigger:** The first time `DeepFace.analyze(..., actions=["emotion"], ...)` is called.
-    -   **Location:** Similar to face recognition models, these are downloaded to `~/.deepface/weights`.
-    -   **Direct Link:** Managed by DeepFace.
+---
 
-### ONNXRuntime
+## Notes
+- Default preview resolution: **1280×720** (matching the RetinaFace blob).  
+  If your blob expects the opposite orientation (720×1280), change the preview size in `main.py`.
+- If you add more models, drop them in `blobs/` and reference them in the pipeline.
 
-`ONNXRuntime` is included for potential future optimizations. It does not come with pre-trained models for this specific application. If you were to use it, you would typically convert existing models (e.g., from TensorFlow or PyTorch) into the ONNX format and then load them with `onnxruntime`.
+---
 
--   **Model:** None provided directly by this project.
--   **Location:** Custom ONNX models would be placed in a designated `models/` directory (which is mentioned in the `Project Structure` but not yet created as it's optional).
--   **Direct Link:** Not applicable, as this is for custom ONNX models you might create or acquire.
-
-**Important Note:** The initial download of these models (especially DeepFace models) can take some time and requires an internet connection. Once downloaded, they are cached locally and do not need to be downloaded again.
+**Author:** Sahven Patel  
+*(Original CV System concept & implementation)*

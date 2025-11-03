@@ -1,153 +1,212 @@
-import cv2
-import mediapipe as mp
-import numpy as np
-from deepface import DeepFace
 import os
-import time
-from collections import deque
+import cv2
+import numpy as np
+import depthai as dai
+from pathlib import Path
+from datetime import datetime
+from db import insert_face
 
-# Initialize MediaPipe Face Detection
-mp_face_detection = mp.solutions.face_detection
-mp_drawing = mp.solutions.drawing_utils
-face_detection = mp_face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5)
+BASE = Path(".")
+(FACES := BASE/"faces").mkdir(exist_ok=True, parents=True)
+(IMAGES := BASE/"images").mkdir(exist_ok=True, parents=True)
+(DBDIR := BASE/"database").mkdir(exist_ok=True, parents=True)
 
-# Directory for known faces
-KNOWN_FACES_DIR = "known_faces"
+# ---------------------------
+# helpers
+# ---------------------------
 
-# Ensure known_faces directory exists
-if not os.path.exists(KNOWN_FACES_DIR):
-    os.makedirs(KNOWN_FACES_DIR)
 
-# Load known faces (simple approach: each subfolder is a person's name)
-known_faces_db = {}
-for person_name in os.listdir(KNOWN_FACES_DIR):
-    person_dir = os.path.join(KNOWN_FACES_DIR, person_name)
-    if os.path.isdir(person_dir):
-        known_faces_db[person_name] = [os.path.join(person_dir, f) for f in os.listdir(person_dir) if f.endswith((".jpg", ".png"))]
+def planar_from_bgr(img):
+    b, g, r = cv2.split(img)
+    return b.tobytes() + g.tobytes() + r.tobytes()
 
-print(f"Loaded {len(known_faces_db)} known individuals.")
 
-def recognize_face(face_image):
+def normalize(v):
+    v = v.astype("float32")
+    n = np.linalg.norm(v) + 1e-8
+    return v / n
+
+
+def _nn_first_fp32(pkt):
+    # Try by layer name(s)
     try:
-        face_image_rgb = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
-        temp_face_path = "temp_face.jpg"
-        cv2.imwrite(temp_face_path, face_image_rgb)
+        names = pkt.getAllLayerNames()
+    except Exception:
+        names = []
+    for n in names:
+        for getter in ("getLayerFp16", "getLayerFp32", "getLayerInt32"):
+            if hasattr(pkt, getter):
+                try:
+                    arr = np.array(getattr(pkt, getter)(n), dtype=np.float32).ravel()
+                    if arr.size:
+                        return arr
+                except Exception:
+                    pass
 
-        for person_name, face_paths in known_faces_db.items():
-            for known_face_path in face_paths:
-                result = DeepFace.verify(img1_path=temp_face_path, img2_path=known_face_path, model_name="VGG-Face", enforce_detection=False, distance_metric='cosine')
-                if result["verified"]:
-                    os.remove(temp_face_path)
-                    return person_name
-        os.remove(temp_face_path)
-        return "Unknown"
-    except Exception as e:
-        if os.path.exists(temp_face_path):
-            os.remove(temp_face_path)
-        return "Unknown"
-
-def detect_emotion(face_image):
-    try:
-        face_image_rgb = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
-        demography = DeepFace.analyze(img_path=face_image_rgb, actions=["emotion"], enforce_detection=False, prog_bar=False)
-        
-        if demography and isinstance(demography, list) and len(demography) > 0:
-            return demography[0]["dominant_emotion"]
-        return "Unknown Emotion"
-    except Exception as e:
-        return "Unknown Emotion"
-
-# Behavior tracking data structure
-# Stores last N emotions for each recognized person
-person_behavior = {}
-EMOTION_HISTORY_LENGTH = 10 # Keep track of last 10 emotions
-
-def track_behavior(person_name, emotion):
-    if person_name == "Unknown":
-        return
-
-    if person_name not in person_behavior:
-        person_behavior[person_name] = {
-            "emotion_history": deque(maxlen=EMOTION_HISTORY_LENGTH),
-            "last_seen": time.time()
-        }
-    
-    person_behavior[person_name]["emotion_history"].append(emotion)
-    person_behavior[person_name]["last_seen"] = time.time()
-
-    # Simple behavior analysis: check for frequent emotion changes or prolonged single emotion
-    # This can be expanded significantly.
-    if len(person_behavior[person_name]["emotion_history"]) == EMOTION_HISTORY_LENGTH:
-        unique_emotions = set(person_behavior[person_name]["emotion_history"])
-        if len(unique_emotions) > EMOTION_HISTORY_LENGTH / 2: # More than half unique emotions
-            # print(f"{person_name} is showing varied emotions.")
+    # Try using layer infos -> names
+    if hasattr(pkt, "getAllLayers"):
+        try:
+            infos = pkt.getAllLayers()  # TensorInfo list (metadata)
+            for info in infos:
+                n = getattr(info, "name", None)
+                if not n:
+                    continue
+                for getter in ("getLayerFp16", "getLayerFp32", "getLayerInt32"):
+                    if hasattr(pkt, getter):
+                        try:
+                            arr = np.array(getattr(pkt, getter)(n), dtype=np.float32).ravel()
+                            if arr.size:
+                                return arr
+                        except Exception:
+                            pass
+        except Exception:
             pass
-        elif len(unique_emotions) == 1:
-            # print(f"{person_name} is consistently {list(unique_emotions)[0]}.")
+
+    # Some bindings expose a dict-like dump
+    if hasattr(pkt, "toDict"):
+        try:
+            d = pkt.toDict()
+            for v in d.values():
+                arr = np.array(v, dtype=np.float32).ravel()
+                if arr.size:
+                    return arr
+        except Exception:
             pass
+
+    return np.array([], dtype=np.float32)
+
+
+def parse_openvino_7tuple(pkt, w, h, thr=0.5):
+    data = _nn_first_fp32(pkt)
+    if data.size == 0 or data.size % 7 != 0:
+        return []
+
+    dets = data.reshape(-1, 7)
+    boxes = []
+    for d in dets:
+        conf = float(d[2])
+        if conf < thr:
+            continue
+        x1 = int(max(0, min(1, d[3])) * w)
+        y1 = int(max(0, min(1, d[4])) * h)
+        x2 = int(max(0, min(1, d[5])) * w)
+        y2 = int(max(0, min(1, d[6])) * h)
+        if x2 > x1 and y2 > y1:
+            boxes.append((x1, y1, x2, y2))
+    return boxes
+
+# ---------------------------
+# pipeline (DepthAI v3)
+# ---------------------------
+
+def build_pipeline():
+    p = dai.Pipeline()
+
+    # Build + request an output.
+    cam = p.create(dai.node.Camera).build()
+    preview = cam.requestOutput((1280, 720), type=dai.ImgFrame.Type.BGR888p)
+
+    # RetinaFace NN (device-side detection)
+    nn_det = p.create(dai.node.NeuralNetwork)
+    nn_det.setBlobPath("blobs/Retinaface-720x1280.blob")
+    preview.link(nn_det.input)
+
+    # Host crops -> ImageManip (resize) -> Facenet NN (device embeddings)
+    manip = p.create(dai.node.ImageManip)
+    manip.initialConfig.setOutputSize(160, 160, dai.ImageManipConfig.ResizeMode.STRETCH)
+    manip.initialConfig.setFrameType(dai.ImgFrame.Type.BGR888p)  # ensure Facenet gets BGR planes
+
+    nn_emb = p.create(dai.node.NeuralNetwork)
+    nn_emb.setBlobPath("blobs/Facenet.blob")
+    manip.out.link(nn_emb.input)
+
+    # Queues:
+    q_rgb   = preview.createOutputQueue()             # frames -> host
+    q_det   = nn_det.out.createOutputQueue()          # detections -> host
+    q_face  = manip.inputImage.createInputQueue()     # host -> manip (face crops)
+    q_emb   = nn_emb.out.createOutputQueue()          # embeddings -> host
+
+    return p, q_rgb, q_det, q_face, q_emb
+
+# ---------------------------
+# main()
+# ---------------------------
 
 def main():
-    cap = cv2.VideoCapture(0)
+    # DB path per-day (same convention)
+    db_path = str(DBDIR / (datetime.utcnow().strftime("%Y-%m-%d") + ".db"))
+    sim_threshold = 0.55
 
-    if not cap.isOpened():
-        print("Error: Could not open video stream.")
-        return
+    pipeline, q_rgb, q_det, q_face, q_emb = build_pipeline()
 
-    print("Camera opened successfully. Press \'q\' to quit.")
+    # Start pipeline
+    pipeline.start()
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Error: Could not read frame.")
-            break
+    print("Running on DepthAI v3.x — press 'q' to quit.")
+    while pipeline.isRunning():
+        # Get a frame
+        rgb_pkt = q_rgb.get()  # blocking
+        frame = rgb_pkt.getCvFrame()
+        h, w = frame.shape[:2]
 
-        frame = cv2.flip(frame, 1)
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = face_detection.process(rgb_frame)
+        # Parse detections if available
+        boxes = []
+        if q_det.has():
+            det_pkt = q_det.get()
+            boxes = parse_openvino_7tuple(det_pkt, w, h, thr=0.5)
 
-        current_frame_recognized_people = set()
+        # Save full frame
+        ts = datetime.utcnow()
+        ts_tag = ts.strftime("%Y%m%d_%H%M%S_%f")
+        full_rel = f"/images/{ts_tag}.jpg"
+        cv2.imwrite(str(BASE) + full_rel, frame)
 
-        if results.detections:
-            for detection in results.detections:
-                bbox_c = detection.location_data.relative_bounding_box
-                ih, iw, _ = frame.shape
-                x, y, w, h = int(bbox_c.xmin * iw), int(bbox_c.ymin * ih), \
-                             int(bbox_c.width * iw), int(bbox_c.height * ih)
+        # Send crops to Facenet path
+        crops_meta = []
+        for (x1, y1, x2, y2) in boxes:
+            face = frame[y1:y2, x1:x2]
+            if face.size == 0:
+                continue
 
-                x = max(0, x)
-                y = max(0, y)
-                w = min(iw - x, w)
-                h = min(ih - y, h)
+            planar = planar_from_bgr(face)
+            img = dai.ImgFrame()
+            img.setType(dai.ImgFrame.Type.BGR888p)
+            img.setWidth(face.shape[1])
+            img.setHeight(face.shape[0])
+            img.setData(planar)
+            q_face.send(img)
+            crops_meta.append((x1, y1, x2, y2, face))
 
-                if w > 0 and h > 0:
-                    face_img = frame[y:y+h, x:x+w]
+        # Read Facenet embeddings (1 per crop)
+        embs = []
+        for _ in range(len(crops_meta)):
+            pkt = q_emb.get()  # blocking, one out per one in
+            vec = _nn_first_fp32(pkt)
+            if vec.size == 0:
+                embs.append(None)
+            else:
+                if vec.size != 512:
+                    vec = np.pad(vec, (0, max(0, 512 - vec.size)))[:512]
+                embs.append(normalize(vec))
 
-                    person_name = recognize_face(face_img)
-                    emotion = detect_emotion(face_img)
+        # insert + draw
+        for (meta, emb) in zip(crops_meta, embs):
+            if emb is None:
+                continue
+            x1, y1, x2, y2, face = meta
+            face_rel = f"/faces/{ts_tag}_{x1}_{y1}.jpg"
+            cv2.imwrite(str(BASE) + face_rel, face)
+            uid, name, sim = insert_face(db_path, emb, face_rel, full_rel, ts=ts, threshold=sim_threshold)
+            label = name if name else "id:" + uid[:6]
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(frame, f"{label} ({sim:.2f})", (x1, max(0, y1 - 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-                    track_behavior(person_name, emotion)
-                    current_frame_recognized_people.add(person_name)
-
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 0), 2)
-
-                    text = f'{person_name} ({emotion})'
-                    cv2.putText(frame, text, (x, y - 10), \
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 0), 2)
-        
-        # Clean up behavior data for people not seen recently
-        for person_name in list(person_behavior.keys()):
-            if person_name not in current_frame_recognized_people and (time.time() - person_behavior[person_name]["last_seen"]) > 5: # 5 seconds timeout
-                del person_behavior[person_name]
-
-        cv2.imshow('Visual Detection System', frame)
-
+        cv2.imshow("CV System — RetinaFace + Facenet (DepthAI v3)", frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-    cap.release()
     cv2.destroyAllWindows()
-    face_detection.close()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-

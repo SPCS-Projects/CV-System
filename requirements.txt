@@ -1,7 +1,5 @@
 opencv-python
-mediapipe
-deepface
-onnxruntime
-streamlit
-tf-keras
-
+numpy
+depthai
+pillow
+tensorflow

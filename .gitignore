@@ -13,8 +13,9 @@ venv/
 .idea/
 .vscode/
 
-# Streamlit
-.streamlit/secrets.tomlvenv
-
 # Project Files
-known_faces/*
+faces/*
+images/*
+database/*
+
+main.bak.py
