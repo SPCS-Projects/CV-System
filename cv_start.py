@@ -7,7 +7,7 @@ from ntplib import NTPClient
 import time
 from datetime import datetime
 from cv_db import sql
-# from cv_attributes import statistics
+from cv_attributes import statistics
 from multiprocessing import Process, Queue
 import matplotlib.pyplot as plt
 import os
@@ -85,7 +85,7 @@ def cv_main(que, path, flip):
     # -----------------------------------------------------------------#
 
     age_nn = pipeline.createNeuralNetwork()
-    age_nn.setBlobPath(path + "/blobs/Race.blob")
+    age_nn.setBlobPath(path + "/blobs/FairFace.blob")
 
     xin_age = pipeline.createXLinkIn()
     xin_age.setStreamName("age_in")
@@ -206,7 +206,6 @@ def cv_main(que, path, flip):
                     age_data = age.getFirstLayerFp16()
                     raw_stats.append(age_data)
                 stats = statistics(raw_stats)
-                stats = ["empty", "empty", "empty"]
                 sql(facial_data, target_img_path, database, time_stamp, stats, target_img, timestr, path)
                 toc = time.time()
                 print("Time to process frame: {}".format(getTime(toc - tic)))
