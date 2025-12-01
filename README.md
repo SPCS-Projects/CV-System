@@ -21,6 +21,8 @@ Key runtime logic lives in `cv_start.py` (camera + pipeline + main loop) and `cv
 CV_System/
 ├── cv_start.py           # main entrypoint (camera, NNs, loop, saving, DB calls)
 ├── cv_db.py              # sqlite insert/update (face_meta table, re-id logic)
+├── cv_attributes.py      # A handler file for the attributes model
+├── cv_parsedb.py         # Exports and neatly sorts data from the database/saved image captures
 ├── requirements.txt      # pinned libs (DepthAI, TF, etc.)
 ├── Retinaface/
 │   ├── cv_retinaface.py
