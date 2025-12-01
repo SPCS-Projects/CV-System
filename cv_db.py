@@ -98,8 +98,7 @@ def sql(facial_data, target_img_path, database, time_stamp, stats, target_img, t
                 img_binary = str(["/faces/{}".format(image_name)])
                 full_img_path = "/images/{}".format(timestr+".png")
                 full_img = str([full_img_path])
-                # insert_args = (count, uID, embeddings.tobytes(), img_binary, full_img, time_stamp, time_stamp, stats[i][2], stats[i][1], stats[i][0], 0.0)
-                insert_args = (count, uID, embeddings.tobytes(), img_binary, full_img, time_stamp, time_stamp, stats, stats, stats, 0.0)
+                insert_args = (count, uID, embeddings.tobytes(), img_binary, full_img, time_stamp, time_stamp, stats[i][2], stats[i][1], stats[i][0], 0.0)
                 cursor.execute(insert_statement, insert_args)
 
                 count += 1

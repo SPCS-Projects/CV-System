@@ -84,18 +84,18 @@ def cv_main(que, path, flip):
 
     # -----------------------------------------------------------------#
 
-    # age_nn = pipeline.createNeuralNetwork()
-    # age_nn.setBlobPath(path + "/blobs/Race.blob")
-    #
-    # xin_age = pipeline.createXLinkIn()
-    # xin_age.setStreamName("age_in")
-    # xin_age.out.link(age_nn.input)
-    #
-    # xin_age.setMaxDataSize(200000)
-    # xin_age.setNumFrames(1)
-    # xout_age = pipeline.createXLinkOut()
-    # xout_age.setStreamName("age_out")
-    # age_nn.out.link(xout_age.input)
+    age_nn = pipeline.createNeuralNetwork()
+    age_nn.setBlobPath(path + "/blobs/Race.blob")
+
+    xin_age = pipeline.createXLinkIn()
+    xin_age.setStreamName("age_in")
+    xin_age.out.link(age_nn.input)
+
+    xin_age.setMaxDataSize(200000)
+    xin_age.setNumFrames(1)
+    xout_age = pipeline.createXLinkOut()
+    xout_age.setStreamName("age_out")
+    age_nn.out.link(xout_age.input)
 
     # -----------------------------------------------------------------#
     date = datetime.now().strftime("%Y-%m-%d")
@@ -111,8 +111,8 @@ def cv_main(que, path, flip):
         landIn = device.getInputQueue(name="land_in", maxSize=2, blocking=True)
         landOut = device.getOutputQueue(name="land_out", maxSize=2, blocking=True)
 
-        # ageIn = device.getInputQueue(name="age_in", maxSize=2, blocking=True)
-        # ageOut = device.getOutputQueue(name="age_out", maxSize=2, blocking=True)
+        ageIn = device.getInputQueue(name="age_in", maxSize=2, blocking=True)
+        ageOut = device.getOutputQueue(name="age_out", maxSize=2, blocking=True)
         time.sleep(20)
         que.put("start")
         started = time.time()
@@ -199,13 +199,13 @@ def cv_main(que, path, flip):
                     datatype = np.array(reshape, np.float32)
                     facial_data.append(datatype)
 
-                    # age = np.moveaxis(age_gender[i], -1, 1)
-                    # nn_data_age.setLayer("0", age * 255)
-                    # ageIn.send(nn_data_age)
-                    # age = ageOut.get()
-                    # age_data = age.getFirstLayerFp16()
-                    # raw_stats.append(age_data)
-                # stats = statistics(raw_stats)
+                    age = np.moveaxis(age_gender[i], -1, 1)
+                    nn_data_age.setLayer("0", age * 255)
+                    ageIn.send(nn_data_age)
+                    age = ageOut.get()
+                    age_data = age.getFirstLayerFp16()
+                    raw_stats.append(age_data)
+                stats = statistics(raw_stats)
                 stats = ["empty", "empty", "empty"]
                 sql(facial_data, target_img_path, database, time_stamp, stats, target_img, timestr, path)
                 toc = time.time()
