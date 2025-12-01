@@ -6,10 +6,10 @@ from datetime import datetime
 
 
 def createDirs(dirs):
-    if type(dirs) is list:
-        for dir in dirs:
-            if not os.path.exists(dir):
-                os.mkdir(dir)
+    if isinstance(dirs, list):
+        for d in dirs:
+            if not os.path.exists(d):
+                os.mkdir(d)
     else:
         if not os.path.exists(dirs):
             os.mkdir(dirs)
@@ -21,46 +21,90 @@ def getPath(__file__):
 
 
 def parse(database, path):
-    createDirs(path+"/results")
-    file = open(path+"/results/db.csv", 'w+')
-    file.write("ID, Name, First Seen, Last Seen, Dwell Time, Age, Gender, Race\n")
-    file.close()
+    # Make top-level results dir
+    createDirs(path + "/results")
+
+    # Create master CSV with new header
+    master_csv = os.path.join(path, "results", "db.csv")
+    with open(master_csv, "w+") as file:
+        file.write("ID, uID, First Seen, Last Seen, Dwell Time, Age, Gender, Race\n")
+
     conn = sqlite3.connect(database)
     cursor = conn.cursor()
-    results = cursor.execute("SELECT IMG_NAME, IMG, FULL_IMG, FIRST_SEEN, LAST_SEEN, AGE, GENDER, RACE, ID FROM face_meta")
+
+    results = cursor.execute(
+        """
+        SELECT ID, uID, IMG, FULL_IMG, FIRST_SEEN, LAST_SEEN,
+               AGE, GENDER, RACE, TOTAL_TIME
+        FROM face_meta
+        """
+    )
+
     for result in results:
-        dir = "{}/results/{}".format(path, result[0])
-        faces_dir = "{}/faces".format(dir)
-        full_img_dir = "{}/full".format(dir)
-        dirs = [dir, faces_dir, full_img_dir]
-        createDirs(dirs)
+        # Unpack row with clear names
+        person_id      = result[0]
+        uid            = result[1]
+        faces          = result[2]
+        full_img       = result[3]
+        first_seen_str = result[4]
+        last_seen_str  = result[5]
+        age            = result[6]
+        gender         = result[7]
+        race           = result[8]
+        total_time     = result[9]
 
-        faces = result[1]
-        faces_array = ast.literal_eval(faces)
-        for img in faces_array:
-            shutil.copyfile(path+img, faces_dir+img[6:])
+        # Directories per person
+        dir_path      = f"{path}/results/{person_id}"
+        faces_dir     = f"{dir_path}/faces"
+        full_img_dir  = f"{dir_path}/full"
+        createDirs([dir_path, faces_dir, full_img_dir])
 
-        full_img = result[2]
-        full_img_array = ast.literal_eval(full_img)
-        for img in full_img_array:
-            shutil.copyfile(path + img, full_img_dir+img[7:])
+        # Copy face crops
+        if faces:
+            faces_array = ast.literal_eval(faces)
+            for img in faces_array:
+                shutil.copyfile(path + img, faces_dir + img[6:])
 
-        first = datetime.strptime(result[3], "%Y-%m-%d %H:%M:%S.%f")
-        if result[4] is not None:
-            last = datetime.strptime(result[4], "%Y-%m-%d %H:%M:%S.%f")
+        # Copy full images
+        if full_img:
+            full_img_array = ast.literal_eval(full_img)
+            for img in full_img_array:
+                shutil.copyfile(path + img, full_img_dir + img[7:])
+
+        # Handle timestamps (for consistency / sanity)
+        first = datetime.strptime(first_seen_str, "%Y-%m-%d %H:%M:%S.%f")
+        if last_seen_str is not None:
+            last = datetime.strptime(last_seen_str, "%Y-%m-%d %H:%M:%S.%f")
         else:
             last = first
+            last_seen_str = first_seen_str  # if NULL, mirror first seen
 
-        info = "{}, {}, {}, {}, {}, {}, {}, {}\n".format(result[8], result[0], result[3], result[4], last - first, result[5], result[6], result[7])
+        if total_time is not None:
+            dwell_time = total_time
+        else:
+            dwell_time = str(last - first)
 
-        file = open(dir + "/info.csv", 'w+')
-        file.write("ID, Name, First Seen, Last Seen, Dwell Time, Age, Gender, Race\n")
-        file.write(info)
-        file.close()
+        # Row for CSVs
+        info = "{}, {}, {}, {}, {}, {}, {}, {}\n".format(
+            person_id,        # ID
+            uid,              # uID
+            first_seen_str,   # First Seen
+            last_seen_str,    # Last Seen
+            dwell_time,       # Dwell Time (TOTAL_TIME)
+            age,
+            gender,
+            race
+        )
 
-        file = open(path+"/results/db.csv", 'a')
-        file.write(info)
-        file.close()
+        # Per-person info.csv
+        info_csv = os.path.join(dir_path, "info.csv")
+        with open(info_csv, "w+") as f:
+            f.write("ID, uID, First Seen, Last Seen, Dwell Time, Age, Gender, Race\n")
+            f.write(info)
+
+        # Append to master db.csv
+        with open(master_csv, "a") as f:
+            f.write(info)
 
 
 def run(timestamp=None):
@@ -69,6 +113,7 @@ def run(timestamp=None):
         database = "{}/database/{}.db".format(path, datetime.now().strftime("%Y-%m-%d"))
     else:
         database = "{}/database/{}.db".format(path, timestamp)
+
     if not os.path.isfile(database):
         print("database doesn't exist yet to parse")
     else:
